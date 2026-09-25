@@ -23,6 +23,25 @@ seed 43 used continuous 100-epoch runs, so these are not clean seed-only repeats
 Only the seed-42 HN960 held-out test is available. No MedGemma seed-43 or test
 result is recorded. The original reports remain unchanged and excluded from Git.
 
+## Private Hugging Face repositories
+
+| Purpose | Repository ID | Configuration setting |
+|---|---|---|
+| Trained YOLO26 checkpoints, seeds 42 and 43 | [`Crimson-Dawn/grazpedwri-yolo26-checkpoints`](https://huggingface.co/Crimson-Dawn/grazpedwri-yolo26-checkpoints) | `HF_REPO_ID` |
+| Fine-tuned MedGemma checkpoints | [`Crimson-Dawn/medgemma-fracture-checkpoints`](https://huggingface.co/Crimson-Dawn/medgemma-fracture-checkpoints) | `MEDGEMMA_HF_REPO_ID` |
+| Frozen prepared dataset and splits | [`Crimson-Dawn/grazpedwri-frozen-splits`](https://huggingface.co/datasets/Crimson-Dawn/grazpedwri-frozen-splits) | `DATASET_HF_REPO_ID` |
+
+All three repositories are private and require an authorized Hugging Face login.
+The first two are **model** repositories; the third is a **dataset** repository.
+[RESULTS.md](RESULTS.md#6-source-records-and-reproducibility) records the immutable
+checkpoint revisions used for each reported result.
+
+The dataset's `LATEST_DATA_BACKUP.json` at revision
+`e3aec7e0d16358c283ef850730dd42bdd96b151b` records a completed snapshot:
+`snapshots/c82f835e73885b53df8284c0ae28cf750a815c2557de554a315bfbc34800d618`.
+Its manifest SHA256 matches the frozen data contract below. These identify the
+existing backup; checking its metadata does not constitute a new restore test.
+
 ## 1. Before running anything
 
 Work from the repository root. The established runtime is the existing
