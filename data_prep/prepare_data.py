@@ -22,6 +22,12 @@ from config import (
 SPLITS = ["train", "val", "test"]
 
 
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+
 def _lexists(path):
     return os.path.lexists(str(path))
 
@@ -101,31 +107,23 @@ def build(config):
         "fracture_labels_json",
         "fracture_count",
     }
-    assert required <= set(m.columns), (
-        f"Missing columns: {required - set(m.columns)}"
-    )
-    assert m[list(required)].notna().all().all(), "Missing manifest values."
-    assert m["filestem"].is_unique, "Duplicate image IDs."
-    assert m["patient_id"].str.strip().ne("").all(), "Empty patient IDs."
-    assert m["split"].isin(SPLITS).all(), (
-        "Missing or invalid frozen split assignments."
-    )
-    assert m.groupby("patient_id")["split"].nunique().eq(1).all(), (
-        "Patient leakage!"
-    )
-    assert m["sample_type"].value_counts().to_dict() == {
+    require(required <= set(m.columns), f"Missing columns: {required - set(m.columns)}")
+    require(m[list(required)].notna().all().all(), "Missing manifest values.")
+    require(m["filestem"].is_unique, "Duplicate image IDs.")
+    require(m["patient_id"].str.strip().ne("").all(), "Empty patient IDs.")
+    require(m["split"].isin(SPLITS).all(), "Missing or invalid frozen split assignments.")
+    require(m.groupby("patient_id")["split"].nunique().eq(1).all(), "Patient leakage!")
+    require(m["sample_type"].value_counts().to_dict() == {
         "positive": 13550,
         "negative": 5657,
         "excluded": 1120,
-    }, "Manifest does not match the audited dataset."
+    }, "Manifest does not match the audited dataset.")
     counts = pd.crosstab(m["split"], m["sample_type"]).reindex(
         index=SPLITS,
         columns=["positive", "negative", "excluded"],
         fill_value=0,
     )
-    assert counts.to_dict(orient="index") == SPLIT_COUNTS, (
-        "Split counts differ from the frozen baseline."
-    )
+    require(counts.to_dict(orient="index") == SPLIT_COUNTS, "Split counts differ from the frozen baseline.")
 
     config.activate_environment()
     cache = config.kagglehub_cache or (config.cache_dir / "kagglehub")
@@ -137,34 +135,26 @@ def build(config):
     included = m[m["sample_type"].isin(["positive", "negative"])]
     for row in included.itertuples(index=False):
         image = (dataset_root / row.image_relpath).resolve()
-        assert image.is_relative_to(dataset_root), (
-            f"Invalid image path: {image}"
-        )
-        assert image.is_file(), f"Missing image: {image}"
-        assert (
-            Path(row.filestem).name == row.filestem
-            and row.filestem not in {".", ".."}
+        require(image.is_relative_to(dataset_root), f"Invalid image path: {image}")
+        require(image.is_file(), f"Missing image: {image}")
+        require(
+            Path(row.filestem).name == row.filestem and row.filestem not in {".", ".."},
+            f"Invalid filestem: {row.filestem}",
         )
 
         boxes = json.loads(row.fracture_labels_json)
-        assert len(boxes) == row.fracture_count, (
-            f"Box count mismatch: {row.filestem}"
-        )
-        assert bool(boxes) == (row.sample_type == "positive"), row.filestem
+        require(len(boxes) == row.fracture_count, f"Box count mismatch: {row.filestem}")
+        require(bool(boxes) == (row.sample_type == "positive"), row.filestem)
 
         for box in boxes:
-            assert len(box) == 5 and box[0] == 0, (
-                f"Invalid class/box: {row.filestem}"
-            )
-            assert all(math.isfinite(float(v)) for v in box), row.filestem
+            require(len(box) == 5 and box[0] == 0, f"Invalid class/box: {row.filestem}")
+            require(all(math.isfinite(float(v)) for v in box), row.filestem)
 
             x, y, w, h = map(float, box[1:])
-            assert (
-                0 <= x <= 1
-                and 0 <= y <= 1
-                and 0 < w <= 1
-                and 0 < h <= 1
-            ), row.filestem
+            require(
+                0 <= x <= 1 and 0 <= y <= 1 and 0 < w <= 1 and 0 < h <= 1,
+                row.filestem,
+            )
         prepared.append((row, image, boxes))
 
     # Reserve the staging directory itself, not just its children.

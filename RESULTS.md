@@ -1,12 +1,12 @@
 # Ablation study and MedGemma fine-tuning results
 
-Final saved **shared-evaluator** results for the completed experiments. These are not the native trainer's epoch metrics, and no training, inference, threshold search, or test evaluation was rerun to prepare this document. Point estimates and confidence intervals come directly from each saved `metrics.csv`; operating points, identities, and hardware measurements come from its `evaluation.json`.
+Results for the completed experiments, not the native trainer's epoch metrics. YOLO point estimates and confidence intervals come from saved shared-evaluator `metrics.csv` reports; identities, operating points, and hardware measurements come from `evaluation.json`. **MedGemma's four localization metrics below were recalculated offline from all saved generated boxes, without token-score filtering.** No training, model inference, threshold search, or test evaluation was rerun. Original saved reports remain unchanged.
 
 ## At a glance
 
 - **YOLO HN 960 has the highest validation F1 in both seeds:** 90.46% for seed 42 and 90.18% for seed 43. Seed-43 baseline 640 is almost tied at 90.17%; this is not evidence of a decisive improvement.
 - **The completed held-out test result is seed-42 YOLO HN 960:** AP50:95 56.82%, F1 90.85%, and 0.0630 FP/image, using its frozen validation protocol.
-- **Fine-tuned MedGemma, seed 42:** validation AP50:95 11.16%, F1 57.33%, and 0.2325 FP/image. This evaluated adapter underperformed YOLO on the same validation cohort.
+- **Fine-tuned MedGemma, seed 42, unfiltered:** validation precision 66.78%, recall 50.07%, F1 57.23%, and 0.2352 FP/image at IoU >= 0.50. These use all generated boxes and score-independent matching, not a token-score-selected operating point. MedGemma AP values are omitted.
 - No seed-43 YOLO test report, MedGemma seed-43 result, or MedGemma test report was found in the available records. These must not be filled in from another seed or split.
 
 ## Evaluation scope and units
@@ -19,8 +19,8 @@ Final saved **shared-evaluator** results for the completed experiments. These ar
 - All experiments use the frozen patient-isolated GRAZPEDWRI-DX split. Manifest SHA256: `1719f37f442512c3c4fcab8350bedc0f27ff2dcebc082761299912b897747034`.
 - AP, recall, precision, and F1 are shown as **percentages**; FP/image is a **count rate over all evaluated images**, not a percentage or negative-image-only error rate. Higher is better except FP/image.
 - AP50 uses IoU 0.50; AP50:95 averages over IoU 0.50:0.05:0.95. AP uses score-ranked collected detections, not just boxes passing the selected operating cutoff.
-- Recall, precision, F1, and FP/image use the selected operating cutoff and lesion matching at IoU >= 0.50. Validation selects maximum lesion F1, choosing the highest tested cutoff for exact ties. Filtering is strictly `score > cutoff`.
-- All reports use 1,000 whole-patient bootstrap replicates, bootstrap seed 2026, and 95% percentile CIs. These intervals hold the model and cutoff fixed and exclude training variability and threshold-selection uncertainty. They are not CIs for the difference between two models.
+- **YOLO:** recall, precision, F1, and FP/image use the selected operating cutoff and lesion matching at IoU >= 0.50. Validation selects maximum lesion F1, choosing the highest tested cutoff for exact ties. Filtering is strictly `score > cutoff`. **Updated MedGemma:** no score filtering; maximum-cardinality one-to-one matching at IoU >= 0.50, independent of token scores.
+- Original evaluator reports use 1,000 whole-patient bootstrap replicates, bootstrap seed 2026, and 95% percentile CIs. These intervals hold the model and cutoff fixed and exclude training variability and threshold-selection uncertainty. They are not CIs for the difference between two models. **CIs were not recalculated for the unfiltered MedGemma results; the old token-filtered intervals must not be reused.**
 - Full-dataset YOLO prediction batch is 8; MedGemma prediction batch is 1. The separate timing benchmark is batch 1 for both.
 
 ## 1. YOLO26s ablation: seed 42
@@ -63,7 +63,7 @@ Use the matching completed validation `evaluation.json` via `--protocol` for tes
 - **Higher resolution improves baseline AP50:95 in both recorded seeds**, but not operating-point F1: baseline F1 changes 89.90% to 89.80% for seed 42 and 90.17% to 89.92% for seed 43.
 - **HN is not a consistent false-positive reduction.** At 640px, HN raises FP/image in both seeds; its F1 change is +0.10 percentage points for seed 42 but -0.37 for seed 43.
 - **At 960px, HN improves F1 relative to baseline 960 in both seeds:** +0.67 and +0.26 percentage points. FP/image decreases for seed 42 but increases for seed 43.
-- **The practical gain is small.** Seed-43 HN960 exceeds baseline640 F1 by only about 0.014 percentage points, while FP/image rises from 0.0587 to 0.0832. These are validation-selected operating points, not an equal-threshold or equal-recall comparison. No statistical-significance or clinical-superiority claim is made.
+- **Operating-point tradeoff:** seed-43 HN960 exceeds baseline640 F1 by about 0.014 percentage points, while FP/image rises from 0.0587 to 0.0832. These are validation-selected operating points, not an equal-threshold or equal-recall comparison; they do not establish statistical significance or clinical superiority.
 - Do not pool the two seeds into a mean ± standard deviation that implies identical training schedules. The held-out test below belongs only to the previously evaluated seed-42 checkpoint.
 
 ### YOLO validation uncertainty
@@ -94,18 +94,38 @@ The previously reviewed archived run configuration and final recovery manifest r
 
 These are recorded historical-run settings, **not assumptions from the current configurable launcher defaults**. The archived run-config SHA256 is `fd1b3667fac5b979560ddfe30c1c440567a932b5f44ae6fcdb2674903c8d215c`, also recorded in the local evaluation's `checkpoint_source.run_config_sha256`. The full training configuration/summary is not bundled locally.
 
-The evaluator loaded the saved **best_adapter from checkpoint-2520**, selected by minimum full-validation assistant-token loss, **not localization AP**. Inference is greedy, one beam, maximum 768 new tokens, with a 2,048-token no-truncation guard. Box ranking uses geometric-mean coordinate-token likelihood, an uncalibrated proxy rather than a diagnostic probability or native detector confidence. The validation cutoff is exactly **0.27922365069389343**.
+The evaluator loaded the saved **best_adapter from checkpoint-2520**, selected by minimum full-validation assistant-token loss, **not localization AP**. Inference was greedy, one beam, maximum 768 new tokens, with a 2,048-token no-truncation guard.
 
-| Metric | Estimate | 95% patient-bootstrap CI |
-|---|---:|---|
-| AP50:95 (%) | 11.16 | 10.04 to 12.28 |
-| AP50 (%) | 34.88 | 31.86 to 37.51 |
-| Lesion recall (%) | 50.07 | 47.63 to 52.46 |
-| Precision (%) | 67.04 | 64.47 to 69.59 |
-| F1 (%) | 57.33 | 54.83 to 59.81 |
-| FP/image | 0.2325 | 0.2106 to 0.2555 |
+### Updated unfiltered validation results
 
-All 2,895 generated outputs were reported as parse-valid: 1,839 nonempty and 1,056 empty, with no malformed/truncated outputs recorded. Format success is not localization success. These output-status counts are not a confusion matrix or the cutoff-filtered FP/image metric.
+Recalculated offline with the tracked standard-library-only `rescore_medgemma.py` from `runs/evaluation_medgemma_val_20260918_120322_626065Z/predictions.jsonl`. All **2,050 generated boxes** were present in the saved predictions, alongside **2,734 ground-truth fracture boxes** across **2,895 images**. The collection floor and box cap had discarded no generated boxes.
+
+```bash
+python3 -B rescore_medgemma.py \
+  --predictions runs/evaluation_medgemma_val_20260918_120322_626065Z/predictions.jsonl \
+  --output runs/medgemma_val_unfiltered
+```
+
+Use a new output directory each time. The original prediction/report pair is not bundled in Git; README section 5 supplies a pinned-checkpoint validation command to generate a new pair when needed. `rescore.json` records source hashes, code/runtime identity, method, and counts; it is not an inference/test validation protocol. Unit tests cover ambiguous matching, duplicates, order/score independence, retention checks, and the optional archived-result regression.
+
+**Method:** keep every generated box, ignore token scores, and construct prediction-to-ground-truth edges for IoU >= 0.50 within each image. Use maximum-cardinality one-to-one matching (augmenting paths) to count matched fractures; unmatched predictions are FPs and unmatched ground-truth boxes are FNs. IoU arithmetic retains the original evaluator's float32/epsilon convention. No confidence cutoff or new threshold selection is used.
+
+| Metric | Unfiltered estimate |
+|---|---:|
+| Precision (%) | 66.78 |
+| Lesion recall (%) | 50.07 |
+| F1 (%) | 57.23 |
+| FP/image | 0.2352 |
+
+- Counts: **TP = 1,369; FP = 681; FN = 1,365**.
+- Formulas: precision `1369/2050`; recall `1369/2734`; F1 `2738/4784`; FP/image `681/2895`.
+- **No new confidence intervals were calculated. MedGemma AP values are omitted.**
+- The previous saved metrics used the geometric-mean coordinate-token likelihood proxy with cutoff **0.27922365069389343**. That filtered pipeline retained 2,042 boxes (TP 1,369; FP 673; FN 1,365).
+- The offline audit reproduced the previous four metrics exactly. Removing the filter added **8 false positives**; replacing confidence-ordered matching with score-independent matching did not change the aggregate counts on this dataset.
+- Predictions SHA256: `632ee5d91c2464561a0bdc7fd6016ef727aa7470ffa61909ab00c6ba3af7ab33`. The audit verified this against the original report and confirmed the source `predictions.jsonl`, `metrics.csv`, and `evaluation.json` remained unchanged. Those original reports still describe the historical token-filtered evaluation.
+- YOLO results remain validation-cutoff-selected; the updated MedGemma results are unfiltered. This is not an equal-cutoff comparison.
+
+All 2,895 generated outputs were parse-valid: 1,839 nonempty and 1,056 empty, with no malformed/truncated outputs. Format success is not localization success; these output-status counts are not a confusion matrix.
 
 Only this fine-tuned adapter has a saved MedGemma evaluation. There is no corresponding seed-43, held-out test, or untuned-base result in the available records, so this is not a measured before/after fine-tuning gain or a two-seed MedGemma comparison.
 
@@ -169,5 +189,24 @@ Each source directory contains the original `metrics.csv`, `evaluation.json`, `p
 - MedGemma checkpoint repository: `Crimson-Dawn/medgemma-fracture-checkpoints` (private). Selected archive: `runs/medgemma_train_2gpu_20260917_134859/backups/final_step_002520_20260917_181358_264121Z.zip`; SHA256 `926051d3e0e154ded6c85e8c3bc4537d409208dfcb291b8de5c5897934677d96`.
 - Seed-42 baseline schedule evidence is in the two `runs/baseline_yolo26s_{640,960}_100epochs_seed42_from50_*/continuation_info.json` and `args.yaml` records. Seed-43/HN provenance here is the saved report/checkpoint naming and recorded experiment workflow, not a fresh audit of remote training logs.
 - During compilation, all ten prediction-file SHA256 checks passed, and the seed-42 test report was verified against its exact completed validation protocol. Saved source/runtime/checkpoint checks remain mandatory for any future execution.
+
+### Exact checkpoint paths within the private model repositories
+
+For YOLO, pass the path below as `--hf-filename`, together with its revision in
+the source table above. For MedGemma, use `--hf-run medgemma_train_2gpu_20260917_134859`;
+the resolver verifies and restores the final archive listed here.
+
+| Source | Repository-relative checkpoint/archive path |
+|---|---|
+| Y42-B640 | `runs/baseline_yolo26s_640_100epochs_seed42_from50_20260917_163013_311680Z/epoch_100/best.pt` |
+| Y42-B960 | `runs/baseline_yolo26s_960_100epochs_seed42_from50_20260917_163034_265962Z/epoch_100/best.pt` |
+| Y42-H640 | `runs/hardneg_yolo26s_640_100epochs_seed42_20260918_123707_008523Z/epoch_100/best.pt` |
+| Y42-H960 | `runs/hardneg_yolo26s_960_100epochs_seed42_20260918_092553_812045Z/epoch_100/best.pt` |
+| Y43-B640 | `runs/baseline_yolo26s_640_100epochs_seed43_20260919_024031_450692Z/epoch_100/best.pt` |
+| Y43-B960 | `runs/baseline_yolo26s_960_100epochs_seed43_20260919_091740_052280Z/epoch_100/best.pt` |
+| Y43-H640 | `runs/hardneg_yolo26s_640_100epochs_seed43_direct100_20260919_041817_261415Z/epoch_100/best.pt` |
+| Y43-H960 | `runs/hardneg_yolo26s_960_100epochs_seed43_direct100_20260919_025208_769491Z/epoch_100/best.pt` |
+| MG42 | `runs/medgemma_train_2gpu_20260917_134859/backups/final_step_002520_20260917_181358_264121Z.zip` |
+| Y42-H960-T | `runs/hardneg_yolo26s_960_100epochs_seed42_20260918_092553_812045Z/epoch_100/best.pt` |
 
 Return to the [workflow README](README.md).

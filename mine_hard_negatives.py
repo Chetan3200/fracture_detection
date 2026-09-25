@@ -14,12 +14,6 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-import cv2
-import torch
-import ultralytics
-from huggingface_hub import hf_hub_download
-from tqdm import tqdm
-from ultralytics import YOLO
 
 # Fixed checkpoint provenance and the same proposal rule as the previous script.
 REPO = "Crimson-Dawn/grazpedwri-yolo26-checkpoints"
@@ -31,26 +25,36 @@ MIN_SCORE, MAX_FRACTION, MAX_PER_PATIENT = 0.10, 0.20, 2
 REVIEW_IMAGES = 30
 
 
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+
 def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def download_checkpoint():
     # Uses cached HF login or HF_TOKEN; never put a token in this script.
+    from huggingface_hub import hf_hub_download
+
     metadata_path = hf_hub_download(REPO, f"{REMOTE}/checkpoint_info.json", revision=REVISION)
     metadata = json.loads(Path(metadata_path).read_text())
-    assert metadata["manifest_sha256"] == MANIFEST_SHA, "Backup uses a different split."
-    assert metadata["completed_epoch"] == 100 and metadata["run_name"] == RUN
+    require(metadata["manifest_sha256"] == MANIFEST_SHA, "Backup uses a different split.")
+    require(metadata["completed_epoch"] == 100 and metadata["run_name"] == RUN, "Backup checkpoint provenance mismatch.")
     checkpoint = hf_hub_download(REPO, f"{REMOTE}/best.pt", revision=REVISION)
     # HF stores the pre-stripping training checkpoint. Its container checksum may
     # differ from the local post-training best.pt, so verify against its backup.
-    assert sha256(checkpoint) == metadata["best_pt_sha256"], "Checkpoint checksum mismatch."
+    require(sha256(checkpoint) == metadata["best_pt_sha256"], "Checkpoint checksum mismatch.")
     return checkpoint
 
 
 def save_preview(row, destination):
+    import cv2
+
     image = cv2.imread(row["image_path"])
-    assert image is not None, f"Cannot read {row['image_path']}"
+    require(image is not None, f"Cannot read {row['image_path']}")
     if row["box"] is not None:
         x1, y1, x2, y2 = map(round, row["box"])
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
@@ -62,7 +66,7 @@ def save_preview(row, destination):
     for index, text in enumerate(lines):
         cv2.putText(image, text, (10, 24 + index * 27), cv2.FONT_HERSHEY_SIMPLEX,
                     0.55, (0, 0, 0), 1, cv2.LINE_AA)
-    assert cv2.imwrite(str(destination), image), f"Could not write {destination}"
+    require(cv2.imwrite(str(destination), image), f"Could not write {destination}")
 
 
 def main():
@@ -72,30 +76,38 @@ def main():
     parser.add_argument("--batch", type=int, default=8)
     args = parser.parse_args()
     data, output = args.data.resolve(), args.output.resolve()
-    assert not output.exists(), "Choose a new --output folder; existing results are never overwritten."
-    assert not output.is_relative_to(data), "Keep output outside the prepared dataset."
-    assert args.batch > 0 and torch.cuda.is_available(), "A GPU and positive batch size are required."
-    assert ultralytics.__version__ == "8.4.152", "Use the existing ultralytics==8.4.152 YOLO environment."
+    if output.exists():
+        raise FileExistsError("Choose a new --output folder; existing results are never overwritten.")
+    require(not output.is_relative_to(data), "Keep output outside the prepared dataset.")
+
+    # Runtime-only imports preserve --help and output refusal without ML packages.
+    import torch
+    import ultralytics
+    from tqdm import tqdm
+    from ultralytics import YOLO
+
+    require(args.batch > 0 and torch.cuda.is_available(), "A GPU and positive batch size are required.")
+    require(ultralytics.__version__ == "8.4.152", "Use the existing ultralytics==8.4.152 YOLO environment.")
 
     # 1. Read only audited TRAIN negatives from the unchanged frozen manifest.
     manifest = data / "split_manifest.csv"
-    assert sha256(manifest) == MANIFEST_SHA, "The frozen manifest has changed."
+    require(sha256(manifest) == MANIFEST_SHA, "The frozen manifest has changed.")
     with manifest.open(newline="", encoding="utf-8-sig") as handle:
         negatives = [r for r in csv.DictReader(handle)
                      if r["split"] == "train" and r["sample_type"] == "negative"]
-    assert len(negatives) == 3961, "Expected 3,961 audited training negatives."
+    require(len(negatives) == 3961, "Expected 3,961 audited training negatives.")
     images = {}
     for row in negatives:
         stem = row["filestem"]
         image = data / "images/train" / f"{stem}{Path(row['image_relpath']).suffix}"
         label = data / "labels/train" / f"{stem}.txt"
-        assert int(row["fracture_count"]) == 0 and image.is_file()
-        assert not label.read_text().strip(), f"Nonempty fracture label on negative image: {stem}"
+        require(int(row["fracture_count"]) == 0 and image.is_file(), f"Invalid negative image: {stem}")
+        require(not label.read_text().strip(), f"Nonempty fracture label on negative image: {stem}")
         images[stem] = (str(image), int(row["patient_id"]))
 
     # 2. Automatically download the 640 baseline; previous local runs are unnecessary.
     model = YOLO(download_checkpoint())
-    assert len(model.names) == 1 and str(model.names[0]).lower() == "fracture"
+    require(len(model.names) == 1 and str(model.names[0]).lower() == "fracture", "Unexpected checkpoint classes.")
     results = []
     # A temporary input list streams files without loading all X-rays into RAM.
     # It is removed automatically and is not another output file to manage.
@@ -108,13 +120,13 @@ def main():
         for prediction in tqdm(predictions, total=len(images), desc="Scoring training negatives"):
             stem = Path(prediction.path).stem
             scores = prediction.boxes.conf.cpu()
-            assert torch.isfinite(scores).all(), "Invalid prediction scores."
+            require(torch.isfinite(scores).all(), "Invalid prediction scores.")
             best = int(scores.argmax()) if len(scores) else None
             results.append({"image_id": stem, "patient_id": images[stem][1],
                             "image_path": images[stem][0],
                             "hardness_score": float(scores[best]) if best is not None else 0.0,
                             "box": prediction.boxes.xyxy[best].cpu().tolist() if best is not None else None})
-    assert len(results) == len(images) and {r["image_id"] for r in results} == set(images)
+    require(len(results) == len(images) and {r["image_id"] for r in results} == set(images), "Prediction set does not match input images.")
 
     # 3. Rank by score. Propose at most 20%, score >= 0.10, at most two per patient.
     results.sort(key=lambda r: (-r["hardness_score"], r["image_id"]))
