@@ -4,6 +4,25 @@ Research workflow for fracture detection with YOLO26s and fine-tuned MedGemma. T
 
 This is the authoritative root guide. The shared evaluators live in `evaluation_scripts/`; root `evaluate.py` and `infer.py` are the supported configured frontends. Generated runs, weights, caches, and downloaded data are ignored by Git but intentionally remain local.
 
+## Recorded experiment results
+
+See **[RESULTS.md](RESULTS.md)** for the complete four-way YOLO ablation for seeds
+**42 and 43**, MedGemma fine-tuning results, exact validation cutoffs, confidence
+intervals, recorded hardware measurements, and source-run provenance.
+
+| Recorded result | Split | AP50:95 (%) | F1 (%) | FP/image |
+|---|---|---:|---:|---:|
+| YOLO26s HN 960, seed 42 | Validation | 56.01 | 90.46 | 0.0615 |
+| YOLO26s HN 960, seed 43 | Validation | 56.01 | 90.18 | 0.0832 |
+| YOLO26s HN 960, seed 42 | Test | 56.82 | 90.85 | 0.0630 |
+| Fine-tuned MedGemma, seed 42 | Validation | 11.16 | 57.33 | 0.2325 |
+
+HN960 has the highest recorded validation F1 in both seeds, but seed-43 baseline
+640 is almost tied at 90.17%. Seed-42 baselines used a 50-to-100-epoch continuation;
+seed 43 used continuous 100-epoch runs, so these are not clean seed-only repeats.
+Only the seed-42 HN960 held-out test is available. No MedGemma seed-43 or test
+result is recorded. The original reports remain unchanged and excluded from Git.
+
 ## 1. Before running anything
 
 Work from the repository root. The established runtime is the existing
