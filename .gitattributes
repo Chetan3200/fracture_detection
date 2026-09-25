@@ -1,0 +1,5 @@
+# Preserve exact bytes: these CSVs and Python sources are SHA256-identified.
+# -text disables Git line-ending conversion, not readable source diffs.
+/split_manifest.csv -text
+/hard_negatives_review/*.csv -text
+*.py -text
